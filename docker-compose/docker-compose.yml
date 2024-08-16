@@ -1,0 +1,125 @@
+version: '3'
+
+services:
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.4.6
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - "etcd"
+      - "minio"
+
+
+  elgen-esg-vector-service-melvus:
+    build:
+      context: ../elgen-esg-vector-service-melvus/
+    restart: always
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8004
+      APP_ENV: 'dev'
+      WORKERS_COUNT: 1
+      #vector db config
+      EMBEDDINGS_MODEL_NAME: all-distilroberta-v1
+      TOP_K: 2
+      PERSIST_DIRECTORY: "db"
+      SOURCE_DIRECTORY: artifacts/source_documents/
+      TARGET_SOURCE_CHUNKS: 8
+      DEFAULT_COLLECTION_NAME: 'vectors'
+      #Milvus config
+      MILVUS_HOST: milvus-standalone
+      MILVUS_PORT: 19530
+      MILVUS_PASSWORD: password
+      MILVUS_USER: username
+      MILVUS_ALIAS: my_session
+      DB_HOST: postgres
+      POSTGRES_DB: database
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    container_name: elgen-esg-vector-service
+    ports:
+      - "8004:8004"
+    volumes:
+      - /docker_volumes/elgen/vector_db/:/app/db/
+
+  attu:
+    container_name: attu
+    image: zilliz/attu:v2.4
+    environment:
+      MILVUS_HOST: milvus-standalone
+      MILVUS_PORT: 19530
+    ports:
+      - "8003:3000"
+
+
+  milvus-insight:
+    image: milvusdb/milvus-insight:latest
+    ports:
+      - "8002:3000"  # Expose Milvus Insight on port 8002 of your host machine
+    environment:
+      - MILVUS_URL=http://milvus-standalone:19530  # Point to your Milvus server
+    depends_on:
+      - elgen-esg-vector-service-melvus  # Assuming your application exposes Milvus API on port 8000
+      - standalone  # Ensure Milvus server is running before Insight connects
+
+
+volumes:
+  esdata:
+  portainer_data:
+
+
+networks:
+  default:
+    name: milvus
+
