@@ -14,7 +14,7 @@ class AppConfig(BaseSettings):
 
 
 class VectorDBConfig(BaseSettings):
-    EMBEDDING_FUNCTION_NAME = Field(env="EMBEDDINGS_MODEL_NAME", default="all-distilroberta-v1")
+    EMBEDDING_FUNCTION_NAME = Field(env="EMBEDDINGS_MODEL_NAME", default="intfloat/multilingual-e5-large")
     TOP_K = Field(env="TOP_K", default=2,
                   description="How many source documents to use in the query input for the model")
 
@@ -58,7 +58,7 @@ class MilvusCollectionConfig(BaseSettings):
                                                    description="the maximum length of the es_id")
     ID_FIELD: str = Field(env="SOURCE_FIELD_MAX_LENGTH", default="id")
     TEXT_VECTOR_FIELD_DIMENSION: int = Field(env="SOURCE_FIELD_MAX_LENGTH",
-                                             default=768,
+                                             default=1024,
                                              description="the embedding dimension of the vectors in milvus")  # TODO change this to be a dynamic value using for example embedding_size = model.get_sentence_embedding_dimension()
     SIMILARITY_METRIC: str = Field(env="SIMILARITY_METRIC", default="L2",
                                    description="The metric used to compare two embedding vectors in Milvus DB")
